@@ -186,14 +186,6 @@ class C3SPP(C3):
         c_ = int(c2 * e)
         self.m = SPP(c_, c_, k)
 
-""" 将n个Bottleneck替换为n个GhostBottleneck """
-class C3Ghost(C3):
-    # C3 module with GhostBottleneck()
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
-        c_ = int(c2 * e)  # hidden channels
-        self.m = nn.Sequential(*(GhostBottleneck(c_, c_) for _ in range(n)))
-
 """ 空间金字塔池化 """
 class SPP(nn.Module):
     # Spatial Pyramid Pooling (SPP) layer https://arxiv.org/abs/1406.4729
@@ -239,35 +231,6 @@ class Focus(nn.Module):
     def forward(self, x):  # x(b,c,w,h) -> y(b,4c,w/2,h/2)
         return self.conv(torch.cat((x[..., ::2, ::2], x[..., 1::2, ::2], x[..., ::2, 1::2], x[..., 1::2, 1::2]), 1))
         # return self.conv(self.contract(x))
-
-""" 幻象卷积 可代替Conv """
-class GhostConv(nn.Module):
-    # Ghost Convolution https://github.com/huawei-noah/ghostnet
-    def __init__(self, c1, c2, k=1, s=1, g=1, act=True):  # ch_in, ch_out, kernel, stride, groups
-        super().__init__()
-        c_ = c2 // 2  # hidden channels
-        self.cv1 = Conv(c1, c_, k, s, None, g, act=act)
-        self.cv2 = Conv(c_, c_, 5, 1, None, c_, act=act)
-
-    def forward(self, x):
-        y = self.cv1(x)
-        return torch.cat((y, self.cv2(y)), 1)
-
-""" 幻象瓶颈 可代替Bottleneck """
-class GhostBottleneck(nn.Module):
-    # Ghost Bottleneck https://github.com/huawei-noah/ghostnet
-    def __init__(self, c1, c2, k=3, s=1):  # ch_in, ch_out, kernel, stride
-        super().__init__()
-        c_ = c2 // 2
-        self.conv = nn.Sequential(
-            GhostConv(c1, c_, 1, 1),  # pw
-            DWConv(c_, c_, k, s, act=False) if s == 2 else nn.Identity(),  # dw
-            GhostConv(c_, c2, 1, 1, act=False))  # pw-linear
-        self.shortcut = nn.Sequential(DWConv(c1, c1, k, s, act=False),
-                                      Conv(c1, c2, 1, 1, act=False)) if s == 2 else nn.Identity()
-
-    def forward(self, x):
-        return self.conv(x) + self.shortcut(x)
 
 """ 收缩模块 调整张量维度 让宽高收缩到通道中 """
 class Contract(nn.Module):
@@ -864,11 +827,49 @@ class Classify(nn.Module):
         if isinstance(x, list):
             x = torch.cat(x, 1)
         return self.linear(self.drop(self.pool(self.conv(x)).flatten(1)))
+# ======================================================= Ghost ========================================================
 
+""" 幻象卷积 可代替Conv """
+class GhostConv(nn.Module):
+    # Ghost Convolution https://github.com/huawei-noah/ghostnet
+    def __init__(self, c1, c2, k=1, s=1, g=1, act=True):  # ch_in, ch_out, kernel, stride, groups
+        super().__init__()
+        c_ = c2 // 2  # hidden channels
+        self.cv1 = Conv(c1, c_, k, s, None, g, act=act)
+        self.cv2 = Conv(c_, c_, 5, 1, None, c_, act=act)
+
+    def forward(self, x):
+        y = self.cv1(x)
+        return torch.cat((y, self.cv2(y)), 1)
+
+""" 幻象瓶颈 可代替Bottleneck """
+class GhostBottleneck(nn.Module):
+    # Ghost Bottleneck https://github.com/huawei-noah/ghostnet
+    def __init__(self, c1, c2, k=3, s=1):  # ch_in, ch_out, kernel, stride
+        super().__init__()
+        c_ = c2 // 2
+        self.conv = nn.Sequential(
+            GhostConv(c1, c_, 1, 1),  # pw
+            DWConv(c_, c_, k, s, act=False) if s == 2 else nn.Identity(),  # dw
+            GhostConv(c_, c2, 1, 1, act=False))  # pw-linear
+        self.shortcut = nn.Sequential(DWConv(c1, c1, k, s, act=False),
+                                      Conv(c1, c2, 1, 1, act=False)) if s == 2 else nn.Identity()
+
+    def forward(self, x):
+        return self.conv(x) + self.shortcut(x)
+
+""" 将n个Bottleneck替换为n个GhostBottleneck """
+class C3Ghost(C3):
+    # C3 module with GhostBottleneck()
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
+        super().__init__(c1, c2, n, shortcut, g, e)
+        c_ = int(c2 * e)  # hidden channels
+        self.m = nn.Sequential(*(GhostBottleneck(c_, c_) for _ in range(n)))
 # ======================================================== ECA =========================================================
 
 class ECA(nn.Module):
-    def __init__(self, c1, c2, k_size=3):
+
+    def __init__(self, k_size=3):
         super(ECA, self).__init__()
         self.avg_pool = nn.AdaptiveAvgPool2d(1)
         self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
@@ -886,35 +887,30 @@ class ECA(nn.Module):
 
 class ECABottleneck(nn.Module):
     # Standard bottleneck
-    def __init__(self, c1, c2, shortcut=True, g=1, e=0.5, ratio=16,
-                 k_size=3):  # ch_in, ch_out, shortcut, groups, expansion
+    def __init__(self, c1, c2, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, shortcut, groups, expansion
         super().__init__()
         c_ = int(c2 * e)  # hidden channels
         self.cv1 = Conv(c1, c_, 1, 1)
         self.cv2 = Conv(c_, c2, 3, 1, g=g)
+        self.att = ECA(3)
         self.add = shortcut and c1 == c2
-        # self.eca=ECA(c1,c2)
-        self.avg_pool = nn.AdaptiveAvgPool2d(1)
-        self.conv = nn.Conv1d(1, 1, kernel_size=k_size, padding=(k_size - 1) // 2, bias=False)
-        self.sigmoid = nn.Sigmoid()
 
     def forward(self, x):
-        x1 = self.cv2(self.cv1(x))
-        # out=self.eca(x1)*x1
-        y = self.avg_pool(x1)
-        y = self.conv(y.squeeze(-1).transpose(-1, -2)).transpose(-1, -2).unsqueeze(-1)
-        y = self.sigmoid(y)
-        out = x1 * y.expand_as(x1)
-
-        return x + out if self.add else out
+        return x + self.att(self.cv2(self.cv1(x))) if self.add else self.att(self.cv2(self.cv1(x)))
 
 
-class C3_ECA(C3):
-    # C3 module with ECABottleneck()
-    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):
-        super().__init__(c1, c2, n, shortcut, g, e)
+class C3_ECA(nn.Module):
+
+    def __init__(self, c1, c2, n=1, shortcut=True, g=1, e=0.5):  # ch_in, ch_out, number, shortcut, groups, expansion
+        super().__init__()
         c_ = int(c2 * e)  # hidden channels
+        self.cv1 = Conv(c1, c_, 1, 1)
+        self.cv2 = Conv(c1, c_, 1, 1)
+        self.cv3 = Conv(2 * c_, c2, 1)
         self.m = nn.Sequential(*(ECABottleneck(c_, c_, shortcut, g, e=1.0) for _ in range(n)))
+
+    def forward(self, x):
+        return self.cv3(torch.cat((self.m(self.cv1(x)), self.cv2(x)), dim=1))
 
 # ======================================================= CBAM =========================================================
 
@@ -967,39 +963,3 @@ class CBAM(nn.Module):
         # c*h*w * 1*h*w
         out = self.spatial_attention(out) * out
         return out
-
-
-# ======================================================= BiFPN ========================================================
-# 结合BiFPN 设置可学习参数 学习不同分支的权重
-# 两个分支concat操作
-class BiFPN_Concat2(nn.Module):
-    def __init__(self, dimension=1):
-        super(BiFPN_Concat2, self).__init__()
-        self.d = dimension
-        self.w = nn.Parameter(torch.ones(2, dtype=torch.float32), requires_grad=True)
-        self.epsilon = 0.0001
-
-    def forward(self, x):
-        w = self.w
-        weight = w / (torch.sum(w, dim=0) + self.epsilon)  # 将权重进行归一化
-        # Fast normalized fusion
-        x = [weight[0] * x[0], weight[1] * x[1]]
-        return torch.cat(x, self.d)
-
-# 三个分支concat操作
-class BiFPN_Concat3(nn.Module):
-    def __init__(self, dimension=1):
-        super(BiFPN_Concat3, self).__init__()
-        self.d = dimension
-        # 设置可学习参数 nn.Parameter的作用是：将一个不可训练的类型Tensor转换成可以训练的类型parameter
-        # 并且会向宿主模型注册该参数 成为其一部分 即model.parameters()会包含这个parameter
-        # 从而在参数优化的时候可以自动一起优化
-        self.w = nn.Parameter(torch.ones(3, dtype=torch.float32), requires_grad=True)
-        self.epsilon = 0.0001
-
-    def forward(self, x):
-        w = self.w
-        weight = w / (torch.sum(w, dim=0) + self.epsilon)  # 将权重进行归一化
-        # Fast normalized fusion
-        x = [weight[0] * x[0], weight[1] * x[1], weight[2] * x[2]]
-        return torch.cat(x, self.d)
