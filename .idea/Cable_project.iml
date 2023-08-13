@@ -5,6 +5,7 @@
     <orderEntry type="jdk" jdkName="Python 3.7 (yolov5)" jdkType="Python SDK" />
     <orderEntry type="sourceFolder" forTests="false" />
     <orderEntry type="module" module-name="venv" />
+    <orderEntry type="module" module-name="yolov5" />
   </component>
   <component name="PyDocumentationSettings">
     <option name="format" value="PLAIN" />
