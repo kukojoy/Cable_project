@@ -1,0 +1,27 @@
+<annotation>
+  <folder>VOC</folder>
+  <filename>ZA_YJV_8.7_10kV_3x400_20221105_130124.jpg</filename>
+  <source>
+    <database>COCO</database>
+    <annotation>VOC</annotation>
+    <image>COCO</image>
+  </source>
+  <size>
+    <width>3072</width>
+    <height>2048</height>
+    <depth>3</depth>
+  </size>
+  <segmented>0</segmented>
+  <object>
+    <name>ZA_YJV_8.7_10kV_3x400</name>
+    <pose/>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <bndbox>
+      <xmin>1090</xmin>
+      <ymin>771</ymin>
+      <xmax>2062</xmax>
+      <ymax>1779</ymax>
+    </bndbox>
+  </object>
+</annotation>

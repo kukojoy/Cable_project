@@ -1,0 +1,27 @@
+<annotation>
+  <folder>VOC</folder>
+  <filename>YJV_26_35kV_1x630_20221105_115522.jpg</filename>
+  <source>
+    <database>COCO</database>
+    <annotation>VOC</annotation>
+    <image>COCO</image>
+  </source>
+  <size>
+    <width>3072</width>
+    <height>2048</height>
+    <depth>3</depth>
+  </size>
+  <segmented>0</segmented>
+  <object>
+    <name>YJV_26_35kV_1x630</name>
+    <pose/>
+    <truncated>0</truncated>
+    <difficult>0</difficult>
+    <bndbox>
+      <xmin>1036</xmin>
+      <ymin>1025</ymin>
+      <xmax>1809</xmax>
+      <ymax>1806</ymax>
+    </bndbox>
+  </object>
+</annotation>
