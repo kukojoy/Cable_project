@@ -5,7 +5,7 @@ xmlfilepath = r"./voc/Annotations"
 saveBasePath = r"./voc/ImageSets"
 # 数据集划分
 trainval_percent = 1.00
-train_percent = 0.2
+train_percent = 0.2127
 total_xml = os.listdir(xmlfilepath)
 num = len(total_xml)
 list = range(num)
